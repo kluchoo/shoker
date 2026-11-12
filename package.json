@@ -4,7 +4,12 @@
   "private": true,
   "description": "Poker shotów w sieci lokalnej",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "start:android-entry": "node android-entry.js",
+    "android:prepare": "node scripts/prepare-android-assets.js",
+    "android:run": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/android-run.ps1",
+    "android:emulator": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/android-emulator.ps1",
+    "android:logcat": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/android-logcat.ps1"
   },
   "dependencies": {
     "express": "^4.21.2",

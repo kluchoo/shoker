@@ -7,8 +7,9 @@ const express = require("express");
 const { Server } = require("socket.io");
 const QRCode = require("qrcode");
 
-const PORT = 3000;
+const DEFAULT_PORT = 3000;
 const MAX_PLAYERS = 8;
+const PORT = Number(process.env.PORT) > 0 ? Number(process.env.PORT) : DEFAULT_PORT;
 const REVEAL = [
   "Następna kolejka — odkryj pierwsze 3 karty",
   "Następna kolejka — odkryj 4. kartę",
@@ -28,10 +29,26 @@ function labelDrinks(amount) {
   return `${text} ${word}`;
 }
 
+function isNickChar(ch) {
+  if (ch === " " || ch === "_" || ch === "." || ch === "-") return true;
+  const cp = ch.codePointAt(0);
+  // Avoid \\p{L}/\\p{N} — nodejs-mobile V8 rejects Unicode property escapes.
+  if (cp >= 0x30 && cp <= 0x39) return true; // 0-9
+  if ((cp >= 0x41 && cp <= 0x5a) || (cp >= 0x61 && cp <= 0x7a)) return true; // A-Z a-z
+  if (cp >= 0x00c0 && cp <= 0x00d6) return true;
+  if (cp >= 0x00d8 && cp <= 0x00f6) return true;
+  if (cp >= 0x00f8 && cp <= 0x00ff) return true;
+  if (cp >= 0x0100 && cp <= 0x024f) return true; // Latin Extended-A/B (PL diacritics)
+  if (cp >= 0x1e00 && cp <= 0x1eff) return true; // Latin Extended Additional
+  return false;
+}
+
 function cleanNick(nick) {
   const value = String(nick || "").trim().replace(/\s+/g, " ");
   if (value.length < 2 || value.length > 16) return null;
-  if (!/^[\p{L}\p{N} _.-]+$/u.test(value)) return null;
+  for (const ch of value) {
+    if (!isNickChar(ch)) return null;
+  }
   return value;
 }
 
@@ -633,6 +650,21 @@ function createGame(random = Math.random, onChange = () => {}) {
     };
   }
 
+  function getStatus() {
+    return {
+      phase: table.phase,
+      playerCount: players.length,
+      connectedCount: players.filter((player) => player.connected).length,
+    };
+  }
+
+  function dispose() {
+    stopTimer();
+    table.roulette = null;
+    table.rouletteQueue = [];
+    table.afterRoulette = null;
+  }
+
   return {
     claimHost,
     join,
@@ -648,6 +680,8 @@ function createGame(random = Math.random, onChange = () => {}) {
     skip,
     setUrls,
     view,
+    getStatus,
+    dispose,
     finishRouletteNow: finishRoulette,
   };
 }
@@ -674,12 +708,12 @@ function rank(ip) {
   return 3;
 }
 
-async function buildUrls() {
+async function buildUrls(port = PORT) {
   const ips = lanAddresses();
   const hosts = ips.length ? ips : ["localhost"];
   const urls = [];
   for (const ip of hosts) {
-    const url = `http://${ip}:${PORT}`;
+    const url = `http://${ip}:${port}`;
     let qr = "";
     try {
       qr = await QRCode.toDataURL(url, {
@@ -699,9 +733,89 @@ function validId(id) {
   return typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id);
 }
 
-async function main() {
-  const urls = await buildUrls();
+function resolvePublicDir(options = {}) {
+  return process.env.SHOKER_PUBLIC || options.publicDir || path.join(__dirname, "public");
+}
+
+function resolveVendorDir(options = {}) {
+  return (
+    process.env.SHOKER_VENDOR ||
+    options.vendorDir ||
+    path.join(__dirname, "node_modules", "gsap", "dist")
+  );
+}
+
+function resolvePort(options = {}) {
+  const raw = options.port != null ? Number(options.port) : PORT;
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_PORT;
+}
+
+function isLoopback(req) {
+  const raw = req.socket && req.socket.remoteAddress;
+  return raw === "127.0.0.1" || raw === "::1" || raw === "::ffff:127.0.0.1";
+}
+
+let runtime = null;
+
+function isRunning() {
+  return !!(runtime && runtime.running);
+}
+
+function getRuntimeStatus() {
+  if (!runtime || !runtime.running || !runtime.game) {
+    return {
+      running: false,
+      phase: null,
+      playerCount: 0,
+      connectedCount: 0,
+      port: runtime ? runtime.port : resolvePort(),
+    };
+  }
+  const gameStatus = runtime.game.getStatus();
+  return {
+    running: true,
+    phase: gameStatus.phase,
+    playerCount: gameStatus.playerCount,
+    connectedCount: gameStatus.connectedCount,
+    port: runtime.port,
+  };
+}
+
+async function stopServer() {
+  const current = runtime;
+  if (!current) return { ok: true };
+  current.running = false;
+  if (current.game) {
+    current.game.dispose();
+    current.game = null;
+  }
+  if (current.io) {
+    await new Promise((resolve) => {
+      current.io.close(() => resolve());
+    });
+    current.io = null;
+  }
+  if (current.server) {
+    await new Promise((resolve) => {
+      current.server.close(() => resolve());
+    });
+    current.server = null;
+  }
+  if (current.sockets) current.sockets.clear();
+  runtime = null;
+  console.log("SHOKER_STOPPED");
+  return { ok: true };
+}
+
+async function startServer(options = {}) {
+  if (isRunning()) return { ok: true, already: true, port: runtime.port };
+
+  const port = resolvePort(options);
+  const publicDir = resolvePublicDir(options);
+  const vendorDir = resolveVendorDir(options);
+  const urls = await buildUrls(port);
   const sockets = new Map();
+
   let game;
   function broadcast() {
     if (!game) return;
@@ -711,8 +825,25 @@ async function main() {
   game.setUrls(urls);
 
   const app = express();
-  app.use(express.static(path.join(__dirname, "public"), { maxAge: 0 }));
-  app.use("/vendor", express.static(path.join(__dirname, "node_modules", "gsap", "dist"), { maxAge: "1d" }));
+
+  app.get("/api/status", (_req, res) => {
+    res.json(getRuntimeStatus());
+  });
+
+  app.post("/api/shutdown", async (req, res) => {
+    if (!isLoopback(req)) {
+      res.status(403).json({ ok: false, message: "Tylko localhost" });
+      return;
+    }
+    res.json({ ok: true });
+    setImmediate(() => {
+      stopServer().catch((error) => console.error(error));
+    });
+  });
+
+  app.use(express.static(publicDir, { maxAge: 0 }));
+  app.use("/vendor", express.static(vendorDir, { maxAge: "1d" }));
+
   const server = http.createServer(app);
   const io = new Server(server);
 
@@ -814,16 +945,51 @@ async function main() {
     });
   });
 
-  server.listen(PORT, "0.0.0.0", () => {
-    console.log(`Shoker działa na porcie ${PORT}`);
-    urls.forEach((item) => console.log(item.url));
+  runtime = {
+    running: false,
+    port,
+    server,
+    io,
+    game,
+    sockets,
+  };
+
+  await new Promise((resolve, reject) => {
+    const onError = (error) => {
+      server.off("listening", onListening);
+      runtime = null;
+      reject(error);
+    };
+    const onListening = () => {
+      server.off("error", onError);
+      runtime.running = true;
+      console.log(`Shoker działa na porcie ${port}`);
+      console.log("SHOKER_READY");
+      urls.forEach((item) => console.log(item.url));
+      resolve();
+    };
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(port, "0.0.0.0");
   });
+
+  return { ok: true, port };
 }
 
-module.exports = { createGame, labelDrinks, PORT, REVEAL };
+module.exports = {
+  createGame,
+  labelDrinks,
+  PORT,
+  DEFAULT_PORT,
+  REVEAL,
+  startServer,
+  stopServer,
+  isRunning,
+  getRuntimeStatus,
+};
 
 if (require.main === module) {
-  main().catch((error) => {
+  startServer().catch((error) => {
     console.error(error);
     process.exit(1);
   });
