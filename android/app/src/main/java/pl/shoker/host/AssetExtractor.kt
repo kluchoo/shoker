@@ -18,7 +18,13 @@ object AssetExtractor {
             1L
         }
         val copied = prefs.getLong(KEY_VERSION, -1L)
-        if (!target.exists() || copied != currentVersion) {
+        val gameModule = File(target, "server/game.js")
+        val needsRefresh =
+            !target.exists() ||
+                copied != currentVersion ||
+                !gameModule.isFile ||
+                BuildConfig.DEBUG
+        if (needsRefresh) {
             if (target.exists()) target.deleteRecursively()
             copyAssetFolder(context, ASSET_ROOT, target)
             prefs.edit().putLong(KEY_VERSION, currentVersion).apply()

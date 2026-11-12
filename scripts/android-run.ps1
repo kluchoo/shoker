@@ -30,6 +30,12 @@ if (-not (Test-Path $assetsMarker) -or -not (Test-Path $libnode)) {
         $from = Join-Path $Root $file
         if (Test-Path $from) { Copy-Item $from (Join-Path $assetsNode $file) -Force }
     }
+    $serverSrc = Join-Path $Root "server"
+    $serverDest = Join-Path $assetsNode "server"
+    if (Test-Path $serverSrc) {
+        if (Test-Path $serverDest) { Remove-Item $serverDest -Recurse -Force }
+        Copy-Item $serverSrc $serverDest -Recurse -Force
+    }
 }
 
 Write-Host ">> Checking device…"

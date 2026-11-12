@@ -196,6 +196,11 @@ function bundleNodeProject() {
 
   copyDirFiltered(path.join(ROOT, "public"), path.join(ASSETS_NODE, "public"));
 
+  const serverDir = path.join(ROOT, "server");
+  if (fs.existsSync(serverDir)) {
+    copyDirFiltered(serverDir, path.join(ASSETS_NODE, "server"));
+  }
+
   const nmSrc = path.join(ROOT, "node_modules");
   if (!fs.existsSync(nmSrc)) {
     console.log("Installing npm dependencies…");
