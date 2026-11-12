@@ -1,0 +1,16 @@
+{
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.import.gradle.java.home": "C:\\Program Files\\Android\\Android Studio\\jbr",
+  "java.jdt.ls.java.home": "C:\\Program Files\\Android\\Android Studio\\jbr",
+  "kotlin.languageServer.enabled": true,
+  "files.exclude": {
+    "**/.android-deps": true,
+    "**/android/app/build": true,
+    "**/android/.gradle": true
+  },
+  "terminal.integrated.env.windows": {
+    "JAVA_HOME": "C:\\Program Files\\Android\\Android Studio\\jbr",
+    "ANDROID_HOME": "${env:LOCALAPPDATA}\\Android\\Sdk",
+    "ANDROID_SDK_ROOT": "${env:LOCALAPPDATA}\\Android\\Sdk"
+  }
+}

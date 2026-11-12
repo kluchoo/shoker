@@ -1,0 +1,66 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "android: prepare assets",
+      "type": "shell",
+      "command": "npm run android:prepare",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "JAVA_HOME": "C:\\Program Files\\Android\\Android Studio\\jbr"
+        }
+      },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "android: assembleDebug",
+      "type": "shell",
+      "command": ".\\gradlew.bat :app:assembleDebug",
+      "options": {
+        "cwd": "${workspaceFolder}/android",
+        "env": {
+          "JAVA_HOME": "C:\\Program Files\\Android\\Android Studio\\jbr",
+          "ANDROID_HOME": "${env:LOCALAPPDATA}\\Android\\Sdk"
+        }
+      },
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "android: install + launch (device/emulator)",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/scripts/android-run.ps1\"",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "JAVA_HOME": "C:\\Program Files\\Android\\Android Studio\\jbr",
+          "ANDROID_HOME": "${env:LOCALAPPDATA}\\Android\\Sdk"
+        }
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "android: start emulator Pixel_9_Pro_XL",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/scripts/android-emulator.ps1\"",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "android: logcat Shoker",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/scripts/android-logcat.ps1\"",
+      "problemMatcher": [],
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    }
+  ]
+}
