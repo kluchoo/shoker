@@ -188,6 +188,11 @@ function createGame(random = Math.random, onChange = () => {}) {
     player.riskStreet = table.street;
   }
 
+  function setStake(player, amount) {
+    player.stake = Math.round(Number(amount) * 2) / 2;
+    player.riskStreet = table.street;
+  }
+
   function resultLine(spin) {
     if (spin.outcome === "soplica") return `Tadeusz Soplica ratuje ${spin.nick}`;
     if (spin.outcome === "drink") return `${spin.nick} pije ${labelDrinks(spin.drinks)}`;
@@ -587,9 +592,13 @@ function createGame(random = Math.random, onChange = () => {}) {
     const player = players.find((item) => item.id === clientId);
     if (!player || table.turnId !== clientId || player.status !== "active") return fail("To nie twoja kolej");
     if (type === "enter") {
-      const amount = table.allInActive ? table.settings.allIn : streetEntryAmount();
-      if (table.allInActive) player.status = "allin";
-      addStake(player, amount);
+      if (table.allInActive) {
+        // All-in na stole = ustaw stawkę na pakiet all-in (nie doliczaj).
+        setStake(player, table.settings.allIn);
+        player.status = "allin";
+      } else {
+        addStake(player, streetEntryAmount());
+      }
       player.acted = true;
       pushLog(`${player.nick} wchodzi, stawka ${labelDrinks(player.stake)}`);
       continueAfterAction();
@@ -598,7 +607,8 @@ function createGame(random = Math.random, onChange = () => {}) {
     }
     if (type === "allin") {
       if (table.allInActive) return fail("All-in już leży");
-      addStake(player, table.settings.allIn);
+      // All-in ustawia pulę na konkretną ilość, nie dodaje do wcześniejszych wejść.
+      setStake(player, table.settings.allIn);
       player.status = "allin";
       player.acted = true;
       table.allInActive = true;
