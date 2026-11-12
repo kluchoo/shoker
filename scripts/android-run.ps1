@@ -15,10 +15,21 @@ $env:ANDROID_SDK_ROOT = $Sdk
 $assetsMarker = Join-Path $Android "app\src\main\assets\nodejs-project\android-entry.js"
 $libnode = Join-Path $Android "app\src\main\jniLibs\arm64-v8a\libnode.so"
 if (-not (Test-Path $assetsMarker) -or -not (Test-Path $libnode)) {
-    Write-Host ">> Preparing Android Node assets…"
+    Write-Host ">> Preparing Android Node assets (first time)…"
     Push-Location $Root
     npm run android:prepare
     Pop-Location
+} else {
+    # Always refresh game sources — otherwise Install & Launch keeps a stale public/ from the last prepare.
+    Write-Host ">> Syncing public + server into Android assets…"
+    $assetsNode = Join-Path $Android "app\src\main\assets\nodejs-project"
+    $publicDest = Join-Path $assetsNode "public"
+    if (Test-Path $publicDest) { Remove-Item $publicDest -Recurse -Force }
+    Copy-Item (Join-Path $Root "public") $publicDest -Recurse -Force
+    foreach ($file in @("server.js", "android-entry.js", "package.json", "package-lock.json")) {
+        $from = Join-Path $Root $file
+        if (Test-Path $from) { Copy-Item $from (Join-Path $assetsNode $file) -Force }
+    }
 }
 
 Write-Host ">> Checking device…"
