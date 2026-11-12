@@ -7,7 +7,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,82 +56,82 @@ fun BootingScreen(
         label = "boot-spin-value",
     )
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(ShokerColors.feltDeep)
-            .statusBarsPadding()
-            .padding(28.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-            modifier = Modifier.fillMaxWidth(),
+    ScreenBackground {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(28.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Text(
-                "Shoker",
-                style = MaterialTheme.typography.headlineMedium,
-                color = ShokerColors.brass,
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    "Shoker",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = ShokerColors.text,
+                )
 
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(120.dp)) {
-                Canvas(
-                    modifier = Modifier
-                        .size(120.dp)
-                        .graphicsLayer { rotationZ = if (failed) 0f else spin },
-                ) {
-                    val stroke = 8.dp.toPx()
-                    val diameter = min(size.width, size.height) - stroke
-                    val topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
-                    drawArc(
-                        color = ShokerColors.chip,
-                        startAngle = 0f,
-                        sweepAngle = 360f,
-                        useCenter = false,
-                        topLeft = topLeft,
-                        size = Size(diameter, diameter),
-                        style = Stroke(width = stroke, cap = StrokeCap.Round),
-                    )
-                    drawArc(
-                        color = if (failed) ShokerColors.ember else ShokerColors.brass,
-                        startAngle = -90f,
-                        sweepAngle = if (failed) 360f else bootSweep(progress),
-                        useCenter = false,
-                        topLeft = topLeft,
-                        size = Size(diameter, diameter),
-                        style = Stroke(width = stroke, cap = StrokeCap.Round),
-                    )
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(120.dp)) {
+                    Canvas(
+                        modifier = Modifier
+                            .size(120.dp)
+                            .graphicsLayer { rotationZ = if (failed) 0f else spin },
+                    ) {
+                        val stroke = 8.dp.toPx()
+                        val diameter = min(size.width, size.height) - stroke
+                        val topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
+                        drawArc(
+                            color = ShokerColors.chip,
+                            startAngle = 0f,
+                            sweepAngle = 360f,
+                            useCenter = false,
+                            topLeft = topLeft,
+                            size = Size(diameter, diameter),
+                            style = Stroke(width = stroke, cap = StrokeCap.Round),
+                        )
+                        drawArc(
+                            color = if (failed) ShokerColors.danger else ShokerColors.accent,
+                            startAngle = -90f,
+                            sweepAngle = if (failed) 360f else bootSweep(progress),
+                            useCenter = false,
+                            topLeft = topLeft,
+                            size = Size(diameter, diameter),
+                            style = Stroke(width = stroke, cap = StrokeCap.Round),
+                        )
+                    }
                 }
-            }
 
-            Text(
-                if (failed) "Nie udało się uruchomić stołu" else "Podnoszę serwer…",
-                style = MaterialTheme.typography.titleLarge,
-                color = ShokerColors.ivory,
-                textAlign = TextAlign.Center,
-            )
-            Text(
-                state.error
-                    ?: "Chwilę — Node startuje na telefonie.\nStół otworzy się automatycznie.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (failed) ShokerColors.ember else ShokerColors.ivoryMute,
-                textAlign = TextAlign.Center,
-            )
+                Text(
+                    if (failed) "Nie udało się uruchomić stołu" else "Podnoszę serwer…",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = ShokerColors.text,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    state.error
+                        ?: "Chwilę — Node startuje na telefonie.\nStół otworzy się automatycznie.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (failed) ShokerColors.danger else ShokerColors.muted,
+                    textAlign = TextAlign.Center,
+                )
 
-            VerticalSpace(8)
-            if (failed) {
-                BrassButton(text = "Spróbuj ponownie", onClick = onRetry)
                 VerticalSpace(8)
-                GhostButton(text = "Wróć do menu", onClick = onCancel)
-            } else {
-                GhostButton(text = "Anuluj", onClick = onCancel)
+                if (failed) {
+                    BrassButton(text = "Spróbuj ponownie", onClick = onRetry)
+                    VerticalSpace(8)
+                    GhostButton(text = "Wróć do menu", onClick = onCancel)
+                } else {
+                    GhostButton(text = "Anuluj", onClick = onCancel)
+                }
             }
         }
     }
 }
 
 private fun bootSweep(progress: Float): Float {
-    // Keep a moving arc so the wait feels alive even early in boot.
     return 70f + progress * 220f
 }
