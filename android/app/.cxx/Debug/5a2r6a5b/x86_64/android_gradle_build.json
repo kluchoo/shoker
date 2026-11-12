@@ -1,0 +1,40 @@
+{
+  "buildFiles": [
+    "C:\\Users\\kidi\\Desktop\\projekty\\shoker\\android\\app\\src\\main\\cpp\\CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "C:\\Users\\kidi\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+      "-C",
+      "C:\\Users\\kidi\\Desktop\\projekty\\shoker\\android\\app\\.cxx\\Debug\\5a2r6a5b\\x86_64",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "C:\\Users\\kidi\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+    "-C",
+    "C:\\Users\\kidi\\Desktop\\projekty\\shoker\\android\\app\\.cxx\\Debug\\5a2r6a5b\\x86_64",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "native-lib::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "x86_64",
+      "artifactName": "native-lib",
+      "output": "C:\\Users\\kidi\\Desktop\\projekty\\shoker\\android\\app\\build\\intermediates\\cxx\\Debug\\5a2r6a5b\\obj\\x86_64\\libnative-lib.so",
+      "runtimeFiles": [
+        "C:\\Users\\kidi\\Desktop\\projekty\\shoker\\android\\app\\src\\main\\jniLibs\\x86_64\\libnode.so"
+      ]
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "C:\\Users\\kidi\\AppData\\Local\\Android\\Sdk\\ndk\\26.3.11579264\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang.exe",
+      "cppCompilerExecutable": "C:\\Users\\kidi\\AppData\\Local\\Android\\Sdk\\ndk\\26.3.11579264\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang++.exe"
+    }
+  },
+  "cFileExtensions": [],
+  "cppFileExtensions": [
+    "cpp"
+  ]
+}

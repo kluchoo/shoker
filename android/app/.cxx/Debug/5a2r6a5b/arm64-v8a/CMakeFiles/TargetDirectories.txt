@@ -1,0 +1,3 @@
+C:/Users/kidi/Desktop/projekty/shoker/android/app/.cxx/Debug/5a2r6a5b/arm64-v8a/CMakeFiles/native-lib.dir
+C:/Users/kidi/Desktop/projekty/shoker/android/app/.cxx/Debug/5a2r6a5b/arm64-v8a/CMakeFiles/edit_cache.dir
+C:/Users/kidi/Desktop/projekty/shoker/android/app/.cxx/Debug/5a2r6a5b/arm64-v8a/CMakeFiles/rebuild_cache.dir
