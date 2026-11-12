@@ -19,9 +19,16 @@ data class ServerStatus(
     val error: String? = null,
 )
 
+data class ControlResult(
+    val ok: Boolean,
+    val code: Int = 0,
+    val body: String = "",
+)
+
 object StatusPoller {
     private const val STATUS_URL = "http://127.0.0.1:3000/api/status"
     private const val CONTROL_STATUS_URL = "http://127.0.0.1:3010/status"
+    private const val CONTROL_BASE = "http://127.0.0.1:3010"
 
     fun poll(intervalMs: Long = 1000L): Flow<ServerStatus> = flow {
         while (true) {
@@ -38,22 +45,69 @@ object StatusPoller {
         return ServerStatus(reachable = false, error = "Serwer nie odpowiada")
     }
 
-    fun postControl(path: String): Boolean {
+    fun controlReachable(): Boolean = getJson(CONTROL_STATUS_URL) != null
+
+    fun postControl(path: String): ControlResult {
         return try {
-            val url = URL("http://127.0.0.1:3010$path")
+            val url = URL("$CONTROL_BASE$path")
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 3000
-                readTimeout = 8000
+                readTimeout = 12_000
                 doOutput = true
             }
             conn.outputStream.use { it.write(ByteArray(0)) }
             val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             conn.disconnect()
-            code in 200..299
-        } catch (_: Exception) {
-            false
+            ControlResult(ok = code in 200..299, code = code, body = body)
+        } catch (error: Exception) {
+            ControlResult(ok = false, code = -1, body = error.message.orEmpty())
         }
+    }
+
+    /** Ask control plane to start HTTP; retries through stop races / EADDRINUSE. */
+    fun ensureStarted(maxAttempts: Int = 10): Boolean {
+        repeat(maxAttempts) { attempt ->
+            val status = fetch()
+            if (status.running && status.reachable) return true
+
+            if (!controlReachable()) {
+                Thread.sleep(300L * (attempt + 1))
+                return@repeat
+            }
+
+            val result = postControl("/start")
+            if (result.ok) {
+                // Give Express a beat to bind before caller polls.
+                Thread.sleep(200)
+                if (fetch().running) return true
+            }
+            Thread.sleep(350L * (attempt + 1))
+        }
+        return fetch().running
+    }
+
+    fun ensureStopped(maxAttempts: Int = 8): Boolean {
+        var stopAcked = false
+        repeat(maxAttempts) { attempt ->
+            val status = fetch()
+            // Only treat "not running" as done after we got a stop ACK,
+            // otherwise we can race a still-closing listen socket.
+            if (!status.running && (stopAcked || !controlReachable())) {
+                Thread.sleep(200)
+                return true
+            }
+            val result = postControl("/stop")
+            if (result.ok) {
+                stopAcked = true
+                Thread.sleep(200)
+                if (!fetch().running) return true
+            }
+            Thread.sleep(250L * (attempt + 1))
+        }
+        return !fetch().running
     }
 
     private fun getJson(urlValue: String): JSONObject? {

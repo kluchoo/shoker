@@ -48,32 +48,45 @@ class ShokerHostService : Service() {
         HostRuntime.state = HostRuntime.State.Starting
         HostRuntime.errorMessage = null
 
-        if (nodeThreadStarted.compareAndSet(false, true)) {
-            thread(name = "shoker-node", isDaemon = false) {
+        thread(name = "shoker-start") {
+            // Wait out an in-flight stop so /start is not rejected.
+            var waits = 0
+            while (stopInProgress.get() && waits < 40) {
+                Thread.sleep(100)
+                waits += 1
+            }
+
+            if (nodeThreadStarted.compareAndSet(false, true)) {
                 try {
                     val projectDir = AssetExtractor.ensureProject(applicationContext)
                     val entry = java.io.File(projectDir, "android-entry.js").absolutePath
                     Log.i(TAG, "Starting Node with $entry")
+                    HostRuntime.nodeAlive = true
+                    // node::Start blocks this thread for the process lifetime.
                     val code = NodeBridge.startNodeWithArguments(arrayOf("node", entry))
                     Log.i(TAG, "Node exited with $code")
                     HostRuntime.nodeAlive = false
+                    nodeThreadStarted.set(false)
                     HostRuntime.state = HostRuntime.State.Error
                     HostRuntime.errorMessage = "Node zakończył pracę (kod $code)"
                 } catch (error: Throwable) {
                     Log.e(TAG, "Node failed", error)
                     HostRuntime.nodeAlive = false
+                    nodeThreadStarted.set(false)
                     HostRuntime.state = HostRuntime.State.Error
                     HostRuntime.errorMessage = error.message ?: error.toString()
                 }
-            }
-            HostRuntime.nodeAlive = true
-        } else {
-            // Node already running — ask control plane to start HTTP again
-            thread(name = "shoker-restart") {
-                val ok = StatusPoller.postControl("/start")
+            } else {
+                Log.i(TAG, "Node already alive — requesting HTTP start via control plane")
+                val ok = StatusPoller.ensureStarted()
                 if (!ok) {
-                    HostRuntime.state = HostRuntime.State.Error
-                    HostRuntime.errorMessage = "Nie udało się ponownie uruchomić stołu"
+                    Log.e(TAG, "Failed to restart HTTP server via control plane")
+                    // Don't trip Error here if waitUntilReady can still succeed;
+                    // only mark error when control plane is completely gone.
+                    if (!StatusPoller.controlReachable()) {
+                        HostRuntime.state = HostRuntime.State.Error
+                        HostRuntime.errorMessage = "Nie udało się ponownie uruchomić stołu"
+                    }
                 }
             }
         }
@@ -84,34 +97,41 @@ class ShokerHostService : Service() {
     }
 
     private fun waitUntilReady() {
-        val deadline = System.currentTimeMillis() + 45_000
+        val deadline = System.currentTimeMillis() + BOOT_TIMEOUT_MS
         while (System.currentTimeMillis() < deadline) {
             val status = StatusPoller.fetch()
             if (status.running && status.reachable) {
                 HostRuntime.state = HostRuntime.State.Running
                 HostRuntime.lastStatus = status
+                HostRuntime.errorMessage = null
                 return
             }
             if (HostRuntime.state == HostRuntime.State.Error) return
             try {
-                Thread.sleep(400)
+                Thread.sleep(250)
             } catch (_: InterruptedException) {
                 return
             }
         }
         if (HostRuntime.state != HostRuntime.State.Running) {
             HostRuntime.state = HostRuntime.State.Error
-            HostRuntime.errorMessage = "Timeout — serwer nie wystartował"
+            HostRuntime.errorMessage = "Serwer nie wystartował w ciągu 15 sekund"
         }
     }
 
     private fun stopTable() {
         thread(name = "shoker-stop") {
-            StatusPoller.postControl("/stop")
-            HostRuntime.state = HostRuntime.State.Stopped
-            HostRuntime.lastStatus = ServerStatus(running = false)
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            stopInProgress.set(true)
+            try {
+                StatusPoller.ensureStopped()
+                HostRuntime.state = HostRuntime.State.Stopped
+                HostRuntime.lastStatus = ServerStatus(running = false)
+                HostRuntime.errorMessage = null
+            } finally {
+                stopInProgress.set(false)
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
     }
 
@@ -152,10 +172,12 @@ class ShokerHostService : Service() {
         private const val TAG = "ShokerHostService"
         private const val CHANNEL_ID = "shoker_host"
         private const val NOTIFICATION_ID = 42
+        const val BOOT_TIMEOUT_MS = 15_000L
         const val ACTION_START = "pl.shoker.host.action.START"
         const val ACTION_STOP = "pl.shoker.host.action.STOP"
 
         private val nodeThreadStarted = AtomicBoolean(false)
+        private val stopInProgress = AtomicBoolean(false)
 
         fun start(context: Context) {
             val intent = Intent(context, ShokerHostService::class.java).setAction(ACTION_START)
