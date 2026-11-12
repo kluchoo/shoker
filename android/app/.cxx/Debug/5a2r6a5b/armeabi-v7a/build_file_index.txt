@@ -1,1 +1,0 @@
-C:\Users\kidi\Desktop\projekty\shoker\android\app\src\main\cpp\CMakeLists.txt

@@ -1,7 +1,0 @@
-[
-{
-  "directory": "C:/Users/kidi/Desktop/projekty/shoker/android/app/.cxx/Debug/5a2r6a5b/arm64-v8a",
-  "command": "C:\\Users\\kidi\\AppData\\Local\\Android\\Sdk\\ndk\\26.3.11579264\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang++.exe --target=aarch64-none-linux-android26 --sysroot=C:/Users/kidi/AppData/Local/Android/Sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/windows-x86_64/sysroot -Dnative_lib_EXPORTS -IC:/Users/kidi/Desktop/projekty/shoker/android/app/src/main/cpp/libnode/include -IC:/Users/kidi/Desktop/projekty/shoker/android/app/src/main/cpp/libnode/include/node -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -frtti -fexceptions -fno-limit-debug-info  -fPIC -o CMakeFiles\\native-lib.dir\\node-bridge.cpp.o -c C:\\Users\\kidi\\Desktop\\projekty\\shoker\\android\\app\\src\\main\\cpp\\node-bridge.cpp",
-  "file": "C:\\Users\\kidi\\Desktop\\projekty\\shoker\\android\\app\\src\\main\\cpp\\node-bridge.cpp"
-}
-]
