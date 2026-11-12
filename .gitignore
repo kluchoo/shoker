@@ -16,5 +16,6 @@ android/.idea/*
 *.iml
 .DS_Store
 .vscode/*.log
+.demo-tour-status.json
 
 android/app/.cxx/

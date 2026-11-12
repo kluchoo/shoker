@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "start:android-entry": "node android-entry.js",
+    "demo:tour": "node scripts/demo-tour.js",
     "android:prepare": "node scripts/prepare-android-assets.js",
     "android:run": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/android-run.ps1",
     "android:emulator": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/android-emulator.ps1",
@@ -16,5 +17,8 @@
     "gsap": "^3.13.0",
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.1"
   }
 }
