@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#140C09</color>
+    <color name="ic_launcher_background">#090A0D</color>
+    <color name="shoker_bg">#090A0D</color>
+    <color name="shoker_accent">#F4C56A</color>
 </resources>

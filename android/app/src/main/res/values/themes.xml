@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Shoker" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:statusBarColor">#FF140C09</item>
-        <item name="android:navigationBarColor">#FF140C09</item>
-        <item name="android:windowBackground">#FF140C09</item>
+    <style name="Theme.Shoker" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@color/shoker_bg</item>
+        <item name="android:navigationBarColor">@color/shoker_bg</item>
+        <item name="android:windowBackground">@color/shoker_bg</item>
+        <item name="android:colorPrimary">@color/shoker_accent</item>
     </style>
 </resources>
