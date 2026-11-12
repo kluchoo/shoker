@@ -206,7 +206,6 @@ function menuHtml() {
             <button class="btn solid" type="submit">Siadam</button>
           </div>
         </form>
-        <button class="link" type="button" data-act="host-play">Prowadzę stół</button>
         <p id="menu-note" class="note"></p>
       </div>
     </section>
@@ -291,12 +290,17 @@ function lobbyHtml() {
   `;
 }
 
+function minAllInForEntry(entry) {
+  return Math.round(Number(entry) * 3 * 2) / 2;
+}
+
 function settingsHtml() {
   const settings = state.settings;
+  const minAllIn = minAllInForEntry(settings.entry);
   return `
     <div class="stack" style="margin-top:16px">
       ${stepper("entry", "Wejście", glassesHtml(settings.entry, 5), settings.entry <= 0.5, settings.entry >= 20)}
-      ${stepper("allIn", "All-in", glassesHtml(settings.allIn, 5), settings.allIn <= settings.entry, settings.allIn >= 20)}
+      ${stepper("allIn", "All-in", glassesHtml(settings.allIn, 5), settings.allIn <= minAllIn, settings.allIn >= 60)}
       ${stepper("chambers", "Komory", String(settings.chambers), settings.chambers <= 2, settings.chambers >= 12)}
       <label>
         <span id="soplica-readout">Soplica ${settings.soplica}%</span>
@@ -478,15 +482,6 @@ function onClick(event) {
   if (!button || button.disabled) return;
   unlockAudio();
   const act = button.dataset.act;
-  if (act === "host-play") {
-    const nick = nickValue();
-    socket.emit("host", { sit: nick.trim().length > 0, nick });
-    return;
-  }
-  if (act === "host-only") {
-    socket.emit("host", { sit: false });
-    return;
-  }
   if (act === "start") socket.emit("start");
   if (act === "enter" || act === "fold" || act === "allin") socket.emit("act", { type: act });
   if (act === "reveal") socket.emit("reveal");
@@ -515,16 +510,28 @@ function sendJoin() {
 }
 
 function bump(field, direction) {
-  if (!state || !state.you.isHost) return;
+  if (!state || !state.you.isHost || !state.host.settings) return;
   const settings = { ...state.settings };
   const step = field === "chambers" || field === "soplica" ? 1 : 0.5;
   const delta = direction * step;
-  if (field === "entry" || field === "allIn") {
-    settings[field] = Math.round((settings[field] + delta) * 2) / 2;
+  if (field === "entry") {
+    settings.entry = Math.round((settings.entry + delta) * 2) / 2;
+    settings.entry = Math.min(20, Math.max(0.5, settings.entry));
+    // All-in ≥ 3× wejście (trzy zwykłe ulice: rozdanie + flop + turn).
+    const minAllIn = minAllInForEntry(settings.entry);
+    settings.allIn = Math.max(settings.allIn, minAllIn);
+    settings.allIn = Math.min(60, settings.allIn);
+  } else if (field === "allIn") {
+    const minAllIn = minAllInForEntry(settings.entry);
+    settings.allIn = Math.round((settings.allIn + delta) * 2) / 2;
+    settings.allIn = Math.min(60, Math.max(minAllIn, settings.allIn));
+  } else if (field === "chambers") {
+    settings.chambers = Math.min(12, Math.max(2, settings.chambers + delta));
+  } else if (field === "soplica") {
+    settings.soplica = Math.min(100, Math.max(0, settings.soplica + delta));
   } else {
-    settings[field] += delta;
+    return;
   }
-  if (settings.allIn < settings.entry) settings.allIn = settings.entry;
   socket.emit("settings", settings);
 }
 

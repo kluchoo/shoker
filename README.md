@@ -98,7 +98,7 @@ Przykładowy adres (zależy od telefonu): `http://192.168.43.1:3000` — aplikac
 | Parametr | Domyślnie | Znaczenie |
 | --- | --- | --- |
 | Wejście | 1 | Kieliszki za wejście w ulicę |
-| All-in | 3 | Kieliszki za all-in |
+| All-in | 3 | Kieliszki za all-in (min. 3× wejście: rozdanie + flop + turn) |
 | Komory | 5 | Liczba komór w ruletce |
 | Soplica | 5% | Szansa, że all-in nic nie pije („Tadeusz Soplica ratuje”) |
 
