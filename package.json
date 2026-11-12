@@ -1,0 +1,15 @@
+{
+  "name": "shoker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Poker shotów w sieci lokalnej",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "gsap": "^3.13.0",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.1"
+  }
+}
