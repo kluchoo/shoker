@@ -10,7 +10,16 @@ const http = require("http");
 const { startServer, stopServer, isRunning, getRuntimeStatus } = require("./server");
 
 const CONTROL_PORT = 3010;
-let busy = false;
+let chain = Promise.resolve();
+
+function enqueue(task) {
+  const run = chain.then(task, task);
+  chain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
 
 function sendJson(res, status, body) {
   const payload = JSON.stringify(body);
@@ -31,36 +40,38 @@ function readBody(req) {
 }
 
 async function handleStart(res) {
-  if (busy) {
-    sendJson(res, 409, { ok: false, message: "Trwa operacja" });
-    return;
-  }
-  busy = true;
   try {
-    const result = await startServer();
+    const result = await enqueue(async () => {
+      // Small pause after stop so the port is fully released on Android.
+      if (!isRunning()) await new Promise((r) => setTimeout(r, 150));
+      let lastError = null;
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        try {
+          return await startServer();
+        } catch (error) {
+          lastError = error;
+          const busy = error && (error.code === "EADDRINUSE" || /EADDRINUSE/.test(String(error)));
+          console.error(`SHOKER_START_ATTEMPT_${attempt}`, error);
+          if (!busy || attempt === 5) throw error;
+          await new Promise((r) => setTimeout(r, 200 * attempt));
+        }
+      }
+      throw lastError || new Error("Start failed");
+    });
     sendJson(res, 200, result);
   } catch (error) {
     console.error(error);
     sendJson(res, 500, { ok: false, message: error.message || String(error) });
-  } finally {
-    busy = false;
   }
 }
 
 async function handleStop(res) {
-  if (busy) {
-    sendJson(res, 409, { ok: false, message: "Trwa operacja" });
-    return;
-  }
-  busy = true;
   try {
-    const result = await stopServer();
+    const result = await enqueue(async () => stopServer());
     sendJson(res, 200, result);
   } catch (error) {
     console.error(error);
     sendJson(res, 500, { ok: false, message: error.message || String(error) });
-  } finally {
-    busy = false;
   }
 }
 
@@ -102,16 +113,12 @@ function startControlServer() {
 async function boot() {
   startControlServer();
   try {
-    await startServer();
+    await enqueue(async () => startServer());
   } catch (error) {
     console.error("SHOKER_START_ERROR", error);
   }
   // Keep the event loop alive even when the game server is stopped.
-  setInterval(() => {
-    if (!isRunning()) {
-      // no-op heartbeat for Android lifecycle
-    }
-  }, 15000);
+  setInterval(() => {}, 15000);
 }
 
 boot().catch((error) => {

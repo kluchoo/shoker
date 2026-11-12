@@ -420,12 +420,16 @@ function createGame(random = Math.random, onChange = () => {}) {
     if (clientId !== table.hostId) return fail("Tylko host");
     if (table.phase !== "lobby" && table.phase !== "handEnd") return fail("Stawkę zmienisz między rozdaniami");
     const entry = half(input.entry);
-    const allIn = half(input.allIn);
+    let allIn = half(input.allIn);
     const chambers = Math.round(Number(input.chambers));
     const soplica = Math.round(Number(input.soplica));
     if (entry == null || entry < 0.5 || entry > 20) return fail("Wejście od 0,5 do 20 kieliszków");
-    if (allIn == null || allIn < 0.5 || allIn > 20) return fail("All-in od 0,5 do 20 kieliszków");
-    if (allIn + 1e-6 < entry) return fail("All-in nie może być mniejszy niż wejście");
+    // All-in covers three regular street entries (preflop + flop + turn).
+    const minAllIn = Math.round(entry * 3 * 2) / 2;
+    if (allIn == null || allIn < 0.5 || allIn > 60) return fail("All-in od 0,5 do 60 kieliszków");
+    if (allIn + 1e-6 < minAllIn) {
+      allIn = minAllIn;
+    }
     if (!Number.isInteger(chambers) || chambers < 2 || chambers > 12) return fail("Komory od 2 do 12");
     if (!Number.isInteger(soplica) || soplica < 0 || soplica > 100) return fail("Soplica od 0 do 100%");
     table.settings = { entry, allIn, chambers, soplica };
@@ -781,28 +785,70 @@ function getRuntimeStatus() {
   };
 }
 
+function closeWithTimeout(closeFn, ms = 2000) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    try {
+      closeFn(() => {
+        clearTimeout(timer);
+        finish();
+      });
+    } catch (_error) {
+      clearTimeout(timer);
+      finish();
+    }
+  });
+}
+
 async function stopServer() {
   const current = runtime;
   if (!current) return { ok: true };
+  runtime = null;
   current.running = false;
   if (current.game) {
-    current.game.dispose();
+    try {
+      current.game.dispose();
+    } catch (_error) {
+      /* ignore */
+    }
     current.game = null;
   }
+  if (current.sockets) {
+    for (const socket of current.sockets.values()) {
+      try {
+        socket.disconnect(true);
+      } catch (_error) {
+        /* ignore */
+      }
+    }
+    current.sockets.clear();
+  }
   if (current.io) {
-    await new Promise((resolve) => {
-      current.io.close(() => resolve());
-    });
+    try {
+      current.io.disconnectSockets(true);
+    } catch (_error) {
+      /* ignore */
+    }
+    await closeWithTimeout((cb) => current.io.close(cb));
     current.io = null;
   }
   if (current.server) {
-    await new Promise((resolve) => {
-      current.server.close(() => resolve());
-    });
+    try {
+      if (typeof current.server.closeAllConnections === "function") {
+        current.server.closeAllConnections();
+      }
+    } catch (_error) {
+      /* ignore */
+    }
+    await closeWithTimeout((cb) => current.server.close(cb));
     current.server = null;
   }
-  if (current.sockets) current.sockets.clear();
-  runtime = null;
   console.log("SHOKER_STOPPED");
   return { ok: true };
 }
@@ -957,6 +1003,22 @@ async function startServer(options = {}) {
   await new Promise((resolve, reject) => {
     const onError = (error) => {
       server.off("listening", onListening);
+      try {
+        io.close();
+      } catch (_error) {
+        /* ignore */
+      }
+      try {
+        if (typeof server.closeAllConnections === "function") server.closeAllConnections();
+        server.close();
+      } catch (_error) {
+        /* ignore */
+      }
+      try {
+        game.dispose();
+      } catch (_error) {
+        /* ignore */
+      }
       runtime = null;
       reject(error);
     };
