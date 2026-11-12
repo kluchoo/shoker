@@ -11,11 +11,12 @@ const DEFAULT_PORT = 3000;
 const MAX_PLAYERS = 8;
 const PORT = Number(process.env.PORT) > 0 ? Number(process.env.PORT) : DEFAULT_PORT;
 const REVEAL = [
-  "Następna kolejka — odkryj pierwsze 3 karty",
-  "Następna kolejka — odkryj 4. kartę",
-  "Następna kolejka — odkryj 5. kartę",
+  "Flip time — pierwsze 3",
+  "Kolejna karta wlatuje",
+  "Ostatnia karta, no pressure",
 ];
-const STREET_NAME = ["Karty rozdane", "Trzy karty na stole", "Czwarta karta", "Piąta karta"];
+const STREET_NAME = ["Preflop vibes", "Flop na stole", "Turn", "River · pełny board"];
+const VOTE_NEED = 0.6;
 
 function labelDrinks(amount) {
   const rounded = Math.round(Number(amount) * 2) / 2;
@@ -60,12 +61,13 @@ function createGame(random = Math.random, onChange = () => {}) {
   let seq = 1;
   let timer = null;
   let token = 0;
+  let revealTimer = null;
   const players = [];
   const table = {
     hostId: null,
     urls: [],
     phase: "lobby",
-    settings: { entry: 1, allIn: 3, chambers: 5, soplica: 5 },
+    settings: { entry: 1, finalEntry: 1, allIn: 3, chambers: 5, soplica: 5 },
     street: 0,
     dealerId: null,
     turnId: null,
@@ -74,11 +76,23 @@ function createGame(random = Math.random, onChange = () => {}) {
     handNumber: 0,
     prompt: null,
     winnerId: null,
+    votes: {},
+    summary: null,
     log: [],
     roulette: null,
     rouletteQueue: [],
     afterRoulette: null,
   };
+
+  function streetEntryAmount() {
+    // Street 3 = all five cards out → osobne „następne wejście”.
+    if (table.street >= 3) return table.settings.finalEntry;
+    return table.settings.entry;
+  }
+
+  function voteThreshold(voterCount) {
+    return Math.max(1, Math.ceil(voterCount * VOTE_NEED));
+  }
 
   function emit() {
     onChange();
@@ -112,6 +126,22 @@ function createGame(random = Math.random, onChange = () => {}) {
     token += 1;
     if (timer) clearTimeout(timer);
     timer = null;
+  }
+
+  function stopRevealTimer() {
+    if (revealTimer) clearTimeout(revealTimer);
+    revealTimer = null;
+  }
+
+  function armRevealAuto(ms) {
+    stopRevealTimer();
+    const streetAt = table.street;
+    revealTimer = setTimeout(() => {
+      revealTimer = null;
+      if (table.phase !== "reveal" || table.street !== streetAt) return;
+      applyReveal();
+      emit();
+    }, ms);
   }
 
   function shuffle(list) {
@@ -206,6 +236,8 @@ function createGame(random = Math.random, onChange = () => {}) {
     table.phase = "reveal";
     table.turnId = null;
     table.prompt = REVEAL[table.street];
+    // Auto-advance after client cinema (lift → flip → settle). Host emit also works earlier.
+    armRevealAuto(4200);
   }
 
   function openShowdown() {
@@ -215,8 +247,9 @@ function createGame(random = Math.random, onChange = () => {}) {
       return;
     }
     table.turnId = null;
+    table.votes = {};
     table.phase = "showdown";
-    table.prompt = "Pokażcie karty";
+    table.prompt = "Pokażcie układy — kto ma bag?";
   }
 
   function endStreet() {
@@ -232,12 +265,49 @@ function createGame(random = Math.random, onChange = () => {}) {
     openReveal();
   }
 
+  function buildSummary(winner) {
+    const rows = players.map((player) => ({
+      id: player.id,
+      nick: player.nick,
+      drank: player.handDrank || 0,
+      owed: player.owed || 0,
+      winner: !!(winner && player.id === winner.id),
+      folded: player.status === "folded",
+      allin: player.status === "allin",
+      inHand: !!player.inHand,
+    }));
+    const totalDrank = rows.reduce((sum, row) => sum + (row.drank || 0), 0);
+    return {
+      handNumber: table.handNumber,
+      winnerId: winner ? winner.id : null,
+      winnerNick: winner ? winner.nick : null,
+      totalDrank,
+      players: rows,
+    };
+  }
+
+  function enterHandEnd() {
+    table.phase = "handEnd";
+    table.turnId = null;
+    table.allInActive = false;
+    table.votes = {};
+    players.forEach((player) => {
+      player.ready = false;
+    });
+    const winner = players.find((p) => p.id === table.winnerId) || null;
+    table.summary = buildSummary(winner);
+    table.prompt = table.summary.winnerNick
+      ? `${table.summary.winnerNick} bierze to rozdanie`
+      : "Koniec rozdania";
+  }
+
   function endHand(winner) {
     table.turnId = null;
     table.allInActive = false;
+    table.votes = {};
     table.winnerId = winner ? winner.id : null;
-    table.prompt = winner ? `Wygrywa ${winner.nick}` : "Koniec rozdania";
-    if (winner) pushLog(`Wygrywa ${winner.nick}`);
+    table.prompt = winner ? `${winner.nick} W` : "Koniec rozdania";
+    if (winner) pushLog(`${winner.nick} wygrywa rozdanie`);
     const losers = players.filter(
       (player) => player.inHand && (!winner || player.id !== winner.id) && (player.stake || 0) > 0
     );
@@ -245,11 +315,12 @@ function createGame(random = Math.random, onChange = () => {}) {
     players.forEach((player) => {
       if (player.inHand) player.stake = 0;
     });
+    table.summary = buildSummary(winner);
     table.afterRoulette = "handEnd";
     table.rouletteQueue = spins;
     if (!playQueueHead()) {
-      table.phase = "handEnd";
       table.afterRoulette = null;
+      enterHandEnd();
     }
   }
 
@@ -276,7 +347,18 @@ function createGame(random = Math.random, onChange = () => {}) {
     table.roulette = null;
     if (spin.outcome === "drink") {
       const drinker = players.find((player) => player.id === spin.playerId);
-      if (drinker) drinker.owed = Math.round(((drinker.owed || 0) + spin.drinks) * 2) / 2;
+      if (drinker) {
+        drinker.owed = Math.round(((drinker.owed || 0) + spin.drinks) * 2) / 2;
+        drinker.handDrank = Math.round(((drinker.handDrank || 0) + spin.drinks) * 2) / 2;
+        if (table.summary) {
+          const row = table.summary.players.find((item) => item.id === drinker.id);
+          if (row) {
+            row.drank = drinker.handDrank;
+            row.owed = drinker.owed;
+          }
+          table.summary.totalDrank = table.summary.players.reduce((sum, item) => sum + (item.drank || 0), 0);
+        }
+      }
     }
     pushLog(resultLine(spin));
     if (playQueueHead()) {
@@ -286,9 +368,7 @@ function createGame(random = Math.random, onChange = () => {}) {
     const mode = table.afterRoulette;
     table.afterRoulette = null;
     if (mode === "handEnd") {
-      table.phase = "handEnd";
-      table.turnId = null;
-      table.allInActive = false;
+      enterHandEnd();
     } else {
       continueAfterAction();
     }
@@ -296,6 +376,7 @@ function createGame(random = Math.random, onChange = () => {}) {
   }
 
   function startHand() {
+    stopRevealTimer();
     table.handNumber += 1;
     const order = players.map((player) => player.id);
     const index = order.indexOf(table.dealerId);
@@ -304,6 +385,8 @@ function createGame(random = Math.random, onChange = () => {}) {
     table.allInActive = false;
     table.handAllIn = false;
     table.winnerId = null;
+    table.votes = {};
+    table.summary = null;
     table.prompt = null;
     table.roulette = null;
     table.rouletteQueue = [];
@@ -314,14 +397,17 @@ function createGame(random = Math.random, onChange = () => {}) {
       player.acted = false;
       player.stake = 0;
       player.riskStreet = 0;
+      player.handDrank = 0;
+      player.ready = false;
     });
     table.phase = "betting";
     table.turnId = firstToAct();
-    pushLog(`Rozdanie ${table.handNumber}. Rozdajcie karty.`);
+    pushLog(`Rozdanie ${table.handNumber}. Deal the cards.`);
   }
 
   function backToLobby(message) {
     stopTimer();
+    stopRevealTimer();
     table.phase = "lobby";
     table.prompt = message || null;
     table.turnId = null;
@@ -331,10 +417,14 @@ function createGame(random = Math.random, onChange = () => {}) {
     table.allInActive = false;
     table.handAllIn = false;
     table.winnerId = null;
+    table.votes = {};
+    table.summary = null;
     players.forEach((player) => {
       player.inHand = false;
       player.status = "waiting";
       player.acted = false;
+      player.ready = false;
+      player.handDrank = 0;
     });
   }
 
@@ -378,6 +468,8 @@ function createGame(random = Math.random, onChange = () => {}) {
       owed: 0,
       stake: 0,
       riskStreet: 0,
+      handDrank: 0,
+      ready: false,
     });
     pushLog(`${clean} siada do stołu`);
     return { ok: true };
@@ -420,19 +512,23 @@ function createGame(random = Math.random, onChange = () => {}) {
     if (clientId !== table.hostId) return fail("Tylko host");
     if (table.phase !== "lobby" && table.phase !== "handEnd") return fail("Stawkę zmienisz między rozdaniami");
     const entry = half(input.entry);
+    const finalEntry = half(input.finalEntry != null ? input.finalEntry : input.entry);
     let allIn = half(input.allIn);
     const chambers = Math.round(Number(input.chambers));
     const soplica = Math.round(Number(input.soplica));
     if (entry == null || entry < 0.5 || entry > 20) return fail("Wejście od 0,5 do 20 kieliszków");
+    if (finalEntry == null || finalEntry < 0.5 || finalEntry > 20) {
+      return fail("Następne wejście od 0,5 do 20 kieliszków");
+    }
     // All-in covers three regular street entries (preflop + flop + turn).
     const minAllIn = Math.round(entry * 3 * 2) / 2;
     if (allIn == null || allIn < 0.5 || allIn > 60) return fail("All-in od 0,5 do 60 kieliszków");
     if (allIn + 1e-6 < minAllIn) {
       allIn = minAllIn;
     }
-    if (!Number.isInteger(chambers) || chambers < 2 || chambers > 12) return fail("Komory od 2 do 12");
+    if (!Number.isInteger(chambers) || chambers < 5 || chambers > 12) return fail("Komory od 5 do 12");
     if (!Number.isInteger(soplica) || soplica < 0 || soplica > 100) return fail("Soplica od 0 do 100%");
-    table.settings = { entry, allIn, chambers, soplica };
+    table.settings = { entry, finalEntry, allIn, chambers, soplica };
     emit();
     return { ok: true };
   }
@@ -464,8 +560,7 @@ function createGame(random = Math.random, onChange = () => {}) {
         const mode = table.afterRoulette;
         table.afterRoulette = null;
         if (mode === "handEnd") {
-          table.phase = "handEnd";
-          table.turnId = null;
+          enterHandEnd();
         } else {
           continueAfterAction();
         }
@@ -492,7 +587,7 @@ function createGame(random = Math.random, onChange = () => {}) {
     const player = players.find((item) => item.id === clientId);
     if (!player || table.turnId !== clientId || player.status !== "active") return fail("To nie twoja kolej");
     if (type === "enter") {
-      const amount = table.allInActive ? table.settings.allIn : table.settings.entry;
+      const amount = table.allInActive ? table.settings.allIn : streetEntryAmount();
       if (table.allInActive) player.status = "allin";
       addStake(player, amount);
       player.acted = true;
@@ -530,16 +625,15 @@ function createGame(random = Math.random, onChange = () => {}) {
     return fail("Nieznana akcja");
   }
 
-  function reveal(clientId) {
-    if (clientId !== table.hostId) return fail("Tylko host");
-    if (table.phase !== "reveal") return fail("Nie teraz");
+  function applyReveal() {
+    if (table.phase !== "reveal") return false;
+    stopRevealTimer();
     table.street += 1;
     const bettors = players.filter((player) => player.inHand && player.status === "active");
     if (bettors.length === 0) {
       if (table.street >= 3) openShowdown();
       else openReveal();
-      emit();
-      return { ok: true };
+      return true;
     }
     bettors.forEach((player) => {
       player.acted = false;
@@ -547,22 +641,65 @@ function createGame(random = Math.random, onChange = () => {}) {
     table.phase = "betting";
     table.prompt = null;
     table.turnId = firstToAct();
+    return true;
+  }
+
+  function reveal(clientId) {
+    if (clientId !== table.hostId) return fail("Tylko host");
+    if (table.phase !== "reveal") return fail("Nie teraz");
+    applyReveal();
     emit();
     return { ok: true };
   }
 
-  function pickWinner(clientId, playerId) {
-    if (clientId !== table.hostId) return fail("Tylko host");
+  function tallyVotes() {
+    const counts = {};
+    Object.values(table.votes).forEach((nomineeId) => {
+      counts[nomineeId] = (counts[nomineeId] || 0) + 1;
+    });
+    return counts;
+  }
+
+  function castVote(clientId, playerId) {
     if (table.phase !== "showdown") return fail("Nie teraz");
+    const voter = players.find((item) => item.id === clientId);
+    if (!voter) return fail("Najpierw usiądź");
     const left = alive();
-    const winner = left.find((player) => player.id === playerId);
-    if (!winner) return fail("Wybierz kogoś, kto został w rozdaniu");
-    endHand(winner);
+    const nominee = left.find((player) => player.id === playerId);
+    if (!nominee) return fail("Wybierz kogoś, kto został w rozdaniu");
+    table.votes[clientId] = playerId;
+    const voterCount = players.length;
+    const need = voteThreshold(voterCount);
+    const counts = tallyVotes();
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    if (top && top[1] >= need) {
+      const winner = left.find((player) => player.id === top[0]);
+      if (winner) {
+        endHand(winner);
+        emit();
+        return { ok: true };
+      }
+    }
+    emit();
+    return { ok: true };
+  }
+
+  function setReady(clientId, ready = true) {
+    if (table.phase !== "handEnd") return fail("Nie teraz");
+    const player = players.find((item) => item.id === clientId);
+    if (!player) return fail("Najpierw usiądź");
+    player.ready = !!ready;
+    const seated = players.filter((item) => item.connected);
+    const crowd = seated.length ? seated : players;
+    if (crowd.length >= 2 && crowd.every((item) => item.ready)) {
+      startHand();
+    }
     emit();
     return { ok: true };
   }
 
   function nextHand(clientId) {
+    // Host override — normally wszyscy klikaą ready.
     if (clientId !== table.hostId) return fail("Tylko host");
     if (table.phase !== "handEnd") return fail("Rozdanie jeszcze trwa");
     if (players.length < 2) {
@@ -589,6 +726,16 @@ function createGame(random = Math.random, onChange = () => {}) {
     const settings = table.settings;
     const loaded = Math.min(table.street, settings.chambers);
     const left = alive().map((player) => ({ id: player.id, nick: player.nick }));
+    const entryNow = streetEntryAmount();
+    const safeNum = settings.chambers - loaded;
+    const safePct = settings.chambers ? Math.round((safeNum / settings.chambers) * 100) : 0;
+    const streetPct = settings.chambers ? Math.round((loaded / settings.chambers) * 100) : 0;
+    const voteCounts = tallyVotes();
+    const voterCount = players.length;
+    const voteNeed = voteThreshold(voterCount);
+    const voteTotal = Object.keys(table.votes).length;
+    const myVote = table.votes[clientId] || null;
+    const readyCount = players.filter((player) => player.ready).length;
     return {
       urls: table.urls,
       phase: table.phase,
@@ -600,29 +747,56 @@ function createGame(random = Math.random, onChange = () => {}) {
       handAllIn: table.handAllIn,
       prompt: table.prompt,
       winnerId: table.winnerId,
+      summary: table.summary,
       log: table.log.slice(),
       roulette: table.roulette,
       risk: {
         num: loaded,
         den: settings.chambers,
-        safeNum: settings.chambers - loaded,
-        drinks: table.allInActive ? settings.allIn : settings.entry,
+        safeNum,
+        safePct,
+        streetPct,
+        drinks: table.allInActive ? settings.allIn : entryNow,
         soplica: settings.soplica,
         entry: settings.entry,
+        finalEntry: settings.finalEntry,
         allIn: settings.allIn,
         nextNum: table.phase === "reveal" ? Math.min(table.street + 1, settings.chambers) : null,
       },
+      vote:
+        table.phase === "showdown"
+          ? {
+              need: voteNeed,
+              needPct: Math.round(VOTE_NEED * 100),
+              total: voteTotal,
+              voters: voterCount,
+              counts: voteCounts,
+              mine: myVote,
+            }
+          : null,
+      ready:
+        table.phase === "handEnd"
+          ? {
+              count: readyCount,
+              total: players.length,
+              mine: !!(players.find((player) => player.id === clientId) || {}).ready,
+            }
+          : null,
       players: players.map((player) => ({
         id: player.id,
         nick: player.nick,
         connected: player.connected,
         status: player.status,
         inHand: player.inHand,
+        acted: !!player.acted,
+        ready: !!player.ready,
+        handDrank: player.handDrank || 0,
         dealer: player.id === table.dealerId,
         turn: table.phase === "betting" && player.id === table.turnId,
         winner: table.winnerId === player.id && (table.phase === "handEnd" || table.phase === "roulette"),
         owed: player.owed || 0,
         stake: player.stake || 0,
+        votedFor: table.phase === "showdown" ? table.votes[player.id] || null : null,
       })),
       alive: left,
       decision:
@@ -631,16 +805,19 @@ function createGame(random = Math.random, onChange = () => {}) {
               playerId: table.turnId,
               canAllIn: !table.allInActive,
               allInLive: table.allInActive,
-              addAmount: table.allInActive ? settings.allIn : settings.entry,
-              safeNum: settings.chambers - loaded,
+              addAmount: table.allInActive ? settings.allIn : entryNow,
+              isFinalStreet: table.street >= 3,
+              safeNum,
               safeDen: settings.chambers,
+              safePct,
+              streetPct,
               soplica: settings.soplica,
             }
           : null,
       host: {
         start: table.phase === "lobby" && players.length >= 2,
         reveal: table.phase === "reveal",
-        pick: table.phase === "showdown",
+        pick: false,
         next: table.phase === "handEnd",
         skip: table.phase === "betting" && !!table.turnId,
         settings: table.phase === "lobby" || table.phase === "handEnd",
@@ -664,6 +841,7 @@ function createGame(random = Math.random, onChange = () => {}) {
 
   function dispose() {
     stopTimer();
+    stopRevealTimer();
     table.roulette = null;
     table.rouletteQueue = [];
     table.afterRoulette = null;
@@ -679,7 +857,8 @@ function createGame(random = Math.random, onChange = () => {}) {
     start,
     act,
     reveal,
-    pickWinner,
+    castVote,
+    setReady,
     nextHand,
     skip,
     setUrls,
@@ -965,7 +1144,13 @@ async function startServer(options = {}) {
     socket.on("winner", ({ playerId } = {}) => {
       const clientId = socket.data.clientId;
       if (!clientId) return;
-      reply(socket, game.pickWinner(clientId, playerId));
+      reply(socket, game.castVote(clientId, playerId));
+    });
+
+    socket.on("ready", (payload = {}) => {
+      const clientId = socket.data.clientId;
+      if (!clientId) return;
+      reply(socket, game.setReady(clientId, payload.ready !== false));
     });
 
     socket.on("next", () => {
