@@ -119,9 +119,10 @@ Przykładowy adres (zależy od telefonu): `http://192.168.43.1:3000` — aplikac
 ## Struktura
 
 ```
-server.js              logika gry + start/stop HTTP
+server.js              start/stop HTTP + Socket.IO
+server/game.js         reguły gry
 android-entry.js       entry pod Android (kontroler :3010)
-public/                frontend przeglądarki
+public/js/             frontend (moduły ES + i18n pl/en)
 scripts/prepare-android-assets.js
 android/               natywna aplikacja hosta
 ```
