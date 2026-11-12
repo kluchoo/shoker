@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Shoker</string>
+    <string name="notification_channel">Host stołu</string>
+    <string name="notification_title">Shoker hostuje stół</string>
+    <string name="notification_text">Serwer gry działa w sieci lokalnej</string>
+</resources>
