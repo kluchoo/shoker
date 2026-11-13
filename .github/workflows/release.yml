@@ -48,18 +48,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' android/app/build.gradle.kts | head -n 1)
-          name="Shoker ${version}"
+          title="Shoker ${version}"
+          tag="v${version}"
+          apk="${title}.apk"
           apk_src=$(find android/app/build/outputs/apk/release -name '*.apk' -print -quit)
           if [ -z "$apk_src" ]; then
             echo "Release APK was not produced"
             exit 1
           fi
-          cp "$apk_src" "${name}.apk"
-          if gh release view "$name" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release delete "$name" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+          cp "$apk_src" "$apk"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
           fi
-          gh release create "$name" "${name}.apk" \
+          gh release create "$tag" "$apk" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "$name" \
+            --title "$title" \
             --notes "Shoker ${version}. APK z commita ${GITHUB_SHA}."
