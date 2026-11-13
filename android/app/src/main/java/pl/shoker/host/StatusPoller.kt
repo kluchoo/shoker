@@ -14,7 +14,8 @@ data class ServerStatus(
     val phase: String? = null,
     val playerCount: Int = 0,
     val connectedCount: Int = 0,
-    val port: Int = 3000,
+    val port: Int = 80,
+    val portWarning: String? = null,
     val reachable: Boolean = false,
     val error: String? = null,
 )
@@ -26,9 +27,10 @@ data class ControlResult(
 )
 
 object StatusPoller {
-    private const val STATUS_URL = "http://127.0.0.1:3000/api/status"
     private const val CONTROL_STATUS_URL = "http://127.0.0.1:3010/status"
     private const val CONTROL_BASE = "http://127.0.0.1:3010"
+
+    @Volatile private var gamePort: Int = 0
 
     fun poll(intervalMs: Long = 1000L): Flow<ServerStatus> = flow {
         while (true) {
@@ -38,11 +40,39 @@ object StatusPoller {
     }.flowOn(Dispatchers.IO)
 
     fun fetch(): ServerStatus {
-        val primary = getJson(STATUS_URL)
-        if (primary != null) return parse(primary, reachable = true)
         val control = getJson(CONTROL_STATUS_URL)
-        if (control != null) return parse(control, reachable = true)
+        if (control != null) {
+            val status = parse(control, reachable = true)
+            if (status.port > 0) gamePort = status.port
+            return status
+        }
+        val ports = listOfNotNull(gamePort.takeIf { it > 0 }, 80, 8080, 3000).distinct()
+        for (port in ports) {
+            val json = getJson("http://127.0.0.1:$port/api/status") ?: continue
+            gamePort = port
+            return parse(json, reachable = true)
+        }
         return ServerStatus(reachable = false, error = "Serwer nie odpowiada")
+    }
+
+    fun postAdvertisedHost(name: String?): Boolean {
+        val quoted = if (name == null) "null" else JSONObject.quote(name)
+        val payload = """{"name":$quoted}"""
+        return try {
+            val conn = (URL("$CONTROL_BASE/host").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 2000
+                readTimeout = 4000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            }
+            conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+            val code = conn.responseCode
+            conn.disconnect()
+            code in 200..299
+        } catch (_: Exception) {
+            false
+        }
     }
 
     fun controlReachable(): Boolean = getJson(CONTROL_STATUS_URL) != null
@@ -132,7 +162,8 @@ object StatusPoller {
             phase = if (json.isNull("phase")) null else json.optString("phase"),
             playerCount = json.optInt("playerCount", 0),
             connectedCount = json.optInt("connectedCount", 0),
-            port = json.optInt("port", 3000),
+            port = json.optInt("port", 80),
+            portWarning = json.optString("portWarning").ifBlank { null },
             reachable = reachable,
         )
     }

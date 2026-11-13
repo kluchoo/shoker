@@ -56,6 +56,8 @@ class ShokerHostService : Service() {
                 waits += 1
             }
 
+            LocalDomainAdvertiser.start(applicationContext)
+
             if (nodeThreadStarted.compareAndSet(false, true)) {
                 try {
                     val projectDir = AssetExtractor.ensureProject(applicationContext)
@@ -69,12 +71,14 @@ class ShokerHostService : Service() {
                     nodeThreadStarted.set(false)
                     HostRuntime.state = HostRuntime.State.Error
                     HostRuntime.errorMessage = "Node zakończył pracę (kod $code)"
+                    LocalDomainAdvertiser.stop(applicationContext)
                 } catch (error: Throwable) {
                     Log.e(TAG, "Node failed", error)
                     HostRuntime.nodeAlive = false
                     nodeThreadStarted.set(false)
                     HostRuntime.state = HostRuntime.State.Error
                     HostRuntime.errorMessage = error.message ?: error.toString()
+                    LocalDomainAdvertiser.stop(applicationContext)
                 }
             } else {
                 Log.i(TAG, "Node already alive — requesting HTTP start via control plane")
@@ -104,6 +108,7 @@ class ShokerHostService : Service() {
                 HostRuntime.state = HostRuntime.State.Running
                 HostRuntime.lastStatus = status
                 HostRuntime.errorMessage = null
+                LocalDomainAdvertiser.start(applicationContext)
                 return
             }
             if (HostRuntime.state == HostRuntime.State.Error) return
@@ -123,6 +128,7 @@ class ShokerHostService : Service() {
         thread(name = "shoker-stop") {
             stopInProgress.set(true)
             try {
+                LocalDomainAdvertiser.stop(applicationContext)
                 StatusPoller.ensureStopped()
                 HostRuntime.state = HostRuntime.State.Stopped
                 HostRuntime.lastStatus = ServerStatus(running = false)
@@ -198,4 +204,5 @@ object HostRuntime {
     @Volatile var nodeAlive: Boolean = false
     @Volatile var errorMessage: String? = null
     @Volatile var lastStatus: ServerStatus = ServerStatus()
+    @Volatile var mdns: MdnsSnapshot = MdnsSnapshot()
 }

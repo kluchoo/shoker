@@ -94,6 +94,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.browser:browser:1.8.0")
     implementation("com.google.zxing:core:3.5.3")
+    implementation("org.jmdns:jmdns:3.6.5")
+    implementation("org.slf4j:slf4j-nop:2.0.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("io.socket:socket.io-client:2.1.1") {
         exclude(group = "org.json", module = "json")
