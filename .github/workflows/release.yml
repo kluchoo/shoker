@@ -10,14 +10,54 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-      - name: Utwórz release
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Bundle Node into the Android app
+        run: npm run android:prepare
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;26.3.11579264" "cmake;3.22.1"
+
+      - name: Build release APK
+        working-directory: android
+        run: java -jar gradle/wrapper/gradle-wrapper.jar :app:assembleRelease --stacktrace
+
+      - name: Publish Shoker release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag="sha-${GITHUB_SHA::7}"
-          gh release create "$tag" \
+          version=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' android/app/build.gradle.kts | head -n 1)
+          name="Shoker_${version}"
+          apk_src=$(find android/app/build/outputs/apk/release -name '*.apk' -print -quit)
+          if [ -z "$apk_src" ]; then
+            echo "Release APK was not produced"
+            exit 1
+          fi
+          cp "$apk_src" "${name}.apk"
+          if gh release view "$name" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete "$name" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+          fi
+          gh release create "$name" "${name}.apk" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "$tag" \
-            --notes "Automatyczny release z commita $GITHUB_SHA na main."
+            --title "$name" \
+            --notes "Shoker ${version}. APK z commita ${GITHUB_SHA}."

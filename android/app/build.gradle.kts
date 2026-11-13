@@ -29,10 +29,21 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            // Public sideload key so GitHub releases stay installable and updatable.
+            storeFile = file("../shoker-release.keystore")
+            storePassword = "shoker"
+            keyAlias = "shoker"
+            keyPassword = "shoker"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             isDebuggable = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
