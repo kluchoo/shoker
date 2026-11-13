@@ -9,7 +9,54 @@ const QRCode = require("qrcode");
 const { createGame, labelDrinks, REVEAL } = require("./server/game");
 
 const DEFAULT_PORT = 3000;
+const ANDROID_PORT = 80;
+const FALLBACK_PORT = 8080;
+const DHCP_PORT = 67;
 const PORT = Number(process.env.PORT) > 0 ? Number(process.env.PORT) : DEFAULT_PORT;
+
+function formatHttpUrl(host, port) {
+  if (!host) return "";
+  const numeric = Number(port);
+  if (numeric === 80) return `http://${host}`;
+  return `http://${host}:${numeric}`;
+}
+
+function sanitizeAndroidPort(raw) {
+  const port = Number(raw);
+  if (port === DHCP_PORT) return ANDROID_PORT;
+  if (Number.isFinite(port) && port > 0 && port < 65536) return port;
+  return ANDROID_PORT;
+}
+
+function isPrivilegedBindError(error, port) {
+  const numeric = Number(port);
+  if (!Number.isFinite(numeric) || numeric <= 0 || numeric >= 1024) return false;
+  const code = error && error.code;
+  if (code === "EACCES" || code === "EPERM") return true;
+  const text = String((error && error.message) || error || "");
+  return /\bEACCES\b/.test(text) || /\bEPERM\b/.test(text);
+}
+
+function normalizeAdvertisedHost(name) {
+  if (typeof name !== "string") return null;
+  const trimmed = name.trim().replace(/\.+$/g, "");
+  if (!trimmed) return null;
+  const withLocal = /\.local$/i.test(trimmed) ? trimmed : `${trimmed}.local`;
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.local$/i.test(withLocal)) return null;
+  return withLocal.toLowerCase();
+}
+
+function joinHosts(advertisedHost, ips) {
+  const hosts = [];
+  const push = (host) => {
+    if (!host || hosts.includes(host)) return;
+    hosts.push(host);
+  };
+  push(advertisedHost);
+  const list = ips && ips.length ? ips : ["localhost"];
+  for (const ip of list) push(ip);
+  return hosts;
+}
 
 function lanAddresses() {
   const found = [];
@@ -33,12 +80,11 @@ function rank(ip) {
   return 3;
 }
 
-async function buildUrls(port = PORT) {
-  const ips = lanAddresses();
-  const hosts = ips.length ? ips : ["localhost"];
+async function buildUrls(port = PORT, advertisedHost = null) {
+  const hosts = joinHosts(normalizeAdvertisedHost(advertisedHost), lanAddresses());
   const urls = [];
   for (const ip of hosts) {
-    const url = `http://${ip}:${port}`;
+    const url = formatHttpUrl(ip, port);
     let qr = "";
     try {
       qr = await QRCode.toDataURL(url, {
@@ -86,6 +132,16 @@ function isRunning() {
   return !!(runtime && runtime.running);
 }
 
+function describeBind(server) {
+  try {
+    const addr = server && typeof server.address === "function" ? server.address() : null;
+    if (addr && typeof addr === "object") return addr.address || null;
+  } catch (_error) {
+    /* ignore */
+  }
+  return null;
+}
+
 function getRuntimeStatus() {
   if (!runtime || !runtime.running || !runtime.game) {
     return {
@@ -94,6 +150,9 @@ function getRuntimeStatus() {
       playerCount: 0,
       connectedCount: 0,
       port: runtime ? runtime.port : resolvePort(),
+      portWarning: runtime && runtime.portWarning ? runtime.portWarning : null,
+      advertisedHost: null,
+      bindHost: null,
     };
   }
   const gameStatus = runtime.game.getStatus();
@@ -103,6 +162,9 @@ function getRuntimeStatus() {
     playerCount: gameStatus.playerCount,
     connectedCount: gameStatus.connectedCount,
     port: runtime.port,
+    portWarning: runtime.portWarning || null,
+    advertisedHost: runtime.advertisedHost || null,
+    bindHost: describeBind(runtime.server),
   };
 }
 
@@ -174,8 +236,30 @@ async function stopServer() {
   return { ok: true };
 }
 
+async function updateAdvertisedHost(name) {
+  if (!runtime || !runtime.running || !runtime.game) return { ok: false };
+  const host = normalizeAdvertisedHost(name);
+  const urls = await buildUrls(runtime.port, host);
+  const urlKey = urls.map((item) => item.url).join("|");
+  if (urlKey === runtime.urlKey) {
+    return { ok: true, advertisedHost: runtime.advertisedHost || null, unchanged: true };
+  }
+  runtime.advertisedHost = host;
+  runtime.urlKey = urlKey;
+  runtime.game.setUrls(urls);
+  if (typeof runtime.broadcast === "function") runtime.broadcast();
+  return { ok: true, advertisedHost: host, port: runtime.port };
+}
+
 async function startServer(options = {}) {
-  if (isRunning()) return { ok: true, already: true, port: runtime.port };
+  if (isRunning()) {
+    return {
+      ok: true,
+      already: true,
+      port: runtime.port,
+      portWarning: runtime.portWarning || null,
+    };
+  }
 
   const port = resolvePort(options);
   const publicDir = resolvePublicDir(options);
@@ -327,10 +411,14 @@ async function startServer(options = {}) {
   runtime = {
     running: false,
     port,
+    portWarning: typeof options.portWarning === "string" && options.portWarning ? options.portWarning : null,
+    advertisedHost: null,
+    urlKey: urls.map((item) => item.url).join("|"),
     server,
     io,
     game,
     sockets,
+    broadcast,
   };
 
   await new Promise((resolve, reject) => {
@@ -359,6 +447,7 @@ async function startServer(options = {}) {
       server.off("error", onError);
       runtime.running = true;
       console.log(`Shoker działa na porcie ${port}`);
+      if (runtime.portWarning) console.error("SHOKER_PORT_WARNING", runtime.portWarning);
       console.log("SHOKER_READY");
       urls.forEach((item) => console.log(item.url));
       resolve();
@@ -376,9 +465,19 @@ module.exports = {
   labelDrinks,
   PORT,
   DEFAULT_PORT,
+  ANDROID_PORT,
+  FALLBACK_PORT,
+  DHCP_PORT,
   REVEAL,
+  formatHttpUrl,
+  sanitizeAndroidPort,
+  isPrivilegedBindError,
+  normalizeAdvertisedHost,
+  joinHosts,
+  resolvePort,
   startServer,
   stopServer,
+  updateAdvertisedHost,
   isRunning,
   getRuntimeStatus,
 };
