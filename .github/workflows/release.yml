@@ -41,7 +41,7 @@ jobs:
 
       - name: Build release APK
         working-directory: android
-        run: java -jar gradle/wrapper/gradle-wrapper.jar :app:assembleRelease --stacktrace
+        run: java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain :app:assembleRelease --stacktrace
 
       - name: Publish Shoker release
         env:
