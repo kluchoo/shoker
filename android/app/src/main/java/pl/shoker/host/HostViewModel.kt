@@ -179,6 +179,11 @@ class HostViewModel(app: Application) : AndroidViewModel(app) {
         gameSocket.disconnect()
         socketConnectedForSession = false
         socketUrl = null
+        // Mark stopped before the service finishes, or the next poll
+        // still sees Running and the home button offers to resume the table.
+        HostRuntime.state = HostRuntime.State.Stopped
+        HostRuntime.lastStatus = ServerStatus(running = false)
+        HostRuntime.errorMessage = null
         ShokerHostService.stop(getApplication())
         _ui.update {
             it.copy(
@@ -191,6 +196,9 @@ class HostViewModel(app: Application) : AndroidViewModel(app) {
                 socketReady = false,
                 game = GameState(),
                 message = "Stół zakończony",
+                bootStartedAtMs = 0L,
+                bootElapsedMs = 0L,
+                error = null,
             )
         }
     }
@@ -299,7 +307,9 @@ class HostViewModel(app: Application) : AndroidViewModel(app) {
             polled == null -> HostRuntime.lastStatus
             polled.reachable -> {
                 HostRuntime.lastStatus = polled
-                if (polled.running) HostRuntime.state = HostRuntime.State.Running
+                if (polled.running && HostRuntime.state != HostRuntime.State.Stopped) {
+                    HostRuntime.state = HostRuntime.State.Running
+                }
                 polled
             }
             HostRuntime.state == HostRuntime.State.Running -> HostRuntime.lastStatus
