@@ -23,7 +23,7 @@ export default {
   "lobby.empty": "Nobody seated yet.",
   "lobby.seatNick": "Nick if you're playing too",
   "lobby.seatToo": "Sit me too",
-  "lobby.wifi": "Same Wi‑Fi. If a phone can't join, allow Node through the private network firewall.",
+  "lobby.wifi": "Same hotspot or Wi‑Fi. If shoker.local does not open on a phone, use the IP address. On a computer, allow Node through the private-network firewall.",
   "lobby.qr": "QR code",
   "lobby.curve": "Safe exit: {curve}. All-in = full cylinder, then Soplica {soplica}% clutch save.",
   "lobby.start": "Start",

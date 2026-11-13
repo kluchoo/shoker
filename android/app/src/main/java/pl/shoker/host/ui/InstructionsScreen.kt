@@ -52,7 +52,8 @@ fun InstructionsScreen(onBack: () -> Unit) {
                 title = "Dołączenie",
                 lines = listOf(
                     "Goście łączą się z Twoim hotspotem.",
-                    "Otwierają adres w przeglądarce i podają nick.",
+                    "W przeglądarce wpisują http://shoker.local albo skanują QR.",
+                    "Jak domena nie działa na ich telefonie, używają adresu IP pod spodem.",
                     "Ty zostajesz hostem gry w aplikacji — nie muszą nic instalować.",
                 ),
             )

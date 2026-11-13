@@ -35,7 +35,11 @@ object NetworkAddressFinder {
         return found.sortedWith(compareBy({ it.score }, { it.ip }))
     }
 
-    fun joinUrl(ip: String, port: Int = 3000): String = "http://$ip:$port"
+    fun httpUrl(host: String, port: Int): String {
+        return if (port == 80) "http://$host" else "http://$host:$port"
+    }
+
+    fun joinUrl(ip: String, port: Int = 80): String = httpUrl(ip, port)
 
     private fun score(iface: String, ip: String): Int {
         var value = 50

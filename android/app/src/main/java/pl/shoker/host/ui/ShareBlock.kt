@@ -26,23 +26,59 @@ import pl.shoker.host.ui.theme.ShokerColors
 
 @Composable
 fun ShareBlock(
+    preferredUrl: String?,
+    fallbackUrl: String?,
     joinUrl: String?,
     qr: Bitmap?,
+    qrUsesFallback: Boolean,
+    mdnsNote: String?,
+    portNote: String?,
     hotspotHint: Boolean,
     onCopy: () -> Unit,
     onShare: () -> Unit,
+    onToggleQr: () -> Unit,
     onHotspot: () -> Unit,
     onRefresh: () -> Unit,
 ) {
+    val canToggle = !preferredUrl.isNullOrBlank() && !fallbackUrl.isNullOrBlank() && preferredUrl != fallbackUrl
     FeltPanel {
         SectionLabel("Udostępnij stół")
+        SectionLabel(if (canToggle) "Adres" else "Adres dołączenia")
         Text(
-            joinUrl ?: "Szukam adresu IP…",
+            preferredUrl ?: "Szukam adresu w sieci…",
             style = MaterialTheme.typography.titleMedium,
             color = ShokerColors.text,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = if (fallbackUrl == null) 12.dp else 4.dp),
         )
+        if (fallbackUrl != null) {
+            SectionLabel("Awaryjnie")
+            Text(
+                fallbackUrl,
+                style = MaterialTheme.typography.bodyLarge,
+                color = ShokerColors.muted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            )
+        }
+        if (!mdnsNote.isNullOrBlank()) {
+            Text(
+                mdnsNote,
+                style = MaterialTheme.typography.bodyMedium,
+                color = ShokerColors.accentDim,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            )
+        }
+        if (!portNote.isNullOrBlank()) {
+            Text(
+                portNote,
+                style = MaterialTheme.typography.bodyMedium,
+                color = ShokerColors.danger,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            )
+        }
         if (qr != null) {
             Box(
                 modifier = Modifier
@@ -60,11 +96,29 @@ fun ShareBlock(
                     modifier = Modifier.size(220.dp),
                 )
             }
-            VerticalSpace(12)
+            Text(
+                if (qrUsesFallback || !canToggle) "Kod QR prowadzi do adresu IP" else "Kod QR prowadzi do domeny",
+                style = MaterialTheme.typography.bodyMedium,
+                color = ShokerColors.muted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
+            )
+            VerticalSpace(8)
         }
         BrassButton(text = "Wyślij adres", onClick = onShare, enabled = joinUrl != null)
         VerticalSpace(8)
-        GhostButton(text = "Kopiuj link", onClick = onCopy, enabled = joinUrl != null)
+        GhostButton(text = "Kopiuj adres", onClick = onCopy, enabled = joinUrl != null)
+        if (canToggle) {
+            TextButton(
+                onClick = onToggleQr,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    if (qrUsesFallback) "QR z domeną" else "QR z adresem IP",
+                    color = ShokerColors.accent,
+                )
+            }
+        }
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,

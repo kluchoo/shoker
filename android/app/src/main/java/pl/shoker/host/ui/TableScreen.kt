@@ -27,6 +27,7 @@ fun TableScreen(
     onEnd: () -> Unit,
     onCopy: () -> Unit,
     onShare: () -> Unit,
+    onToggleQr: () -> Unit,
     onHotspot: () -> Unit,
     onRefreshNetwork: () -> Unit,
     onPlayLocal: () -> Unit,
@@ -74,11 +75,17 @@ fun TableScreen(
             )
 
             ShareBlock(
+                preferredUrl = state.preferredUrl,
+                fallbackUrl = state.fallbackUrl,
                 joinUrl = state.joinUrl,
                 qr = state.qr,
+                qrUsesFallback = state.qrUsesFallback,
+                mdnsNote = state.mdnsNote,
+                portNote = state.portNote,
                 hotspotHint = state.hotspotHintVisible,
                 onCopy = onCopy,
                 onShare = onShare,
+                onToggleQr = onToggleQr,
                 onHotspot = onHotspot,
                 onRefresh = onRefreshNetwork,
             )

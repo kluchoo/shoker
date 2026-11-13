@@ -23,7 +23,7 @@ export default {
   "lobby.empty": "Nikt jeszcze nie usiadł.",
   "lobby.seatNick": "Nick, jeśli też grasz",
   "lobby.seatToo": "Też siadam",
-  "lobby.wifi": "Ten sam Wi‑Fi. Jak telefon nie wchodzi, zezwól Node w zaporze sieci prywatnej.",
+  "lobby.wifi": "Ten sam hotspot albo Wi‑Fi. Jak shoker.local nie otwiera się na telefonie, użyj adresu IP. Na komputerze zezwól Node w zaporze sieci prywatnej.",
   "lobby.qr": "Kod QR",
   "lobby.curve": "Bezpieczne wyjście: {curve}. All-in = pełny bęben, potem Soplica {soplica}% szansy na ratunek.",
   "lobby.start": "Start",

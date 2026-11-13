@@ -54,6 +54,7 @@ class MainActivity : ComponentActivity() {
                     onEnd = { viewModel.endTable() },
                     onCopy = { viewModel.copyLink() },
                     onShare = { viewModel.shareLink() },
+                    onToggleQr = { viewModel.toggleQr() },
                     onHotspot = { viewModel.openHotspotSettings() },
                     onRefreshNetwork = { viewModel.refreshNetwork() },
                     onPlayLocal = { viewModel.openLocalGame() },

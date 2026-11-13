@@ -21,7 +21,7 @@ class GameSocket(
 
     @Volatile private var socket: Socket? = null
 
-    fun connect(url: String = "http://127.0.0.1:3000") {
+    fun connect(url: String = "http://127.0.0.1:80") {
         disconnect()
         val opts = IO.Options.builder()
             .setForceNew(true)

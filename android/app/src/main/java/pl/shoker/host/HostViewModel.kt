@@ -31,8 +31,13 @@ data class HostUiState(
     val serverState: HostRuntime.State = HostRuntime.State.Stopped,
     val statusText: String = "Zatrzymany",
     val joinUrl: String? = null,
+    val preferredUrl: String? = null,
+    val fallbackUrl: String? = null,
+    val qrUsesFallback: Boolean = false,
+    val mdnsNote: String? = null,
+    val portNote: String? = null,
     val hostIp: String? = null,
-    val port: Int = 3000,
+    val port: Int = 80,
     val playerCount: Int = 0,
     val connectedCount: Int = 0,
     val phase: String? = null,
@@ -55,6 +60,9 @@ class HostViewModel(app: Application) : AndroidViewModel(app) {
 
     private var pollJob: Job? = null
     private var socketConnectedForSession = false
+    private var socketUrl: String? = null
+    private var qrPreferFallback = false
+    private var lastQrUrl: String? = null
     private val gameSocket = GameSocket(
         context = app,
         onState = { game ->
@@ -78,7 +86,7 @@ class HostViewModel(app: Application) : AndroidViewModel(app) {
         startPolling()
         if (HostRuntime.state == HostRuntime.State.Running) {
             _ui.update { it.copy(screen = AppScreen.Table) }
-            ensureSocket()
+            ensureSocket(HostRuntime.lastStatus.port.takeIf { it > 0 } ?: _ui.value.port)
         }
     }
 
@@ -98,17 +106,20 @@ class HostViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refreshNetwork() {
         val best = NetworkAddressFinder.findBestIpv4()
-        val port = _ui.value.port
-        val url = best?.let { NetworkAddressFinder.joinUrl(it.ip, port) }
-        val qr = url?.let { runCatching { QrBitmap.fromUrl(it) }.getOrNull() }
         _ui.update {
             it.copy(
                 hostIp = best?.ip,
-                joinUrl = url,
-                qr = qr,
                 hotspotHintVisible = !HotspotHelper.looksLikeHotspotActive(),
             )
         }
+        rebuildLinks()
+    }
+
+    fun toggleQr() {
+        val state = _ui.value
+        if (state.preferredUrl == null || state.fallbackUrl == null) return
+        qrPreferFallback = !state.qrUsesFallback
+        rebuildLinks()
     }
 
     fun createTable() {
@@ -146,6 +157,7 @@ class HostViewModel(app: Application) : AndroidViewModel(app) {
     fun cancelBoot() {
         gameSocket.disconnect()
         socketConnectedForSession = false
+        socketUrl = null
         ShokerHostService.stop(getApplication())
         HostRuntime.errorMessage = null
         HostRuntime.state = HostRuntime.State.Stopped
@@ -166,6 +178,7 @@ class HostViewModel(app: Application) : AndroidViewModel(app) {
     fun endTable() {
         gameSocket.disconnect()
         socketConnectedForSession = false
+        socketUrl = null
         ShokerHostService.stop(getApplication())
         _ui.update {
             it.copy(
@@ -202,7 +215,8 @@ class HostViewModel(app: Application) : AndroidViewModel(app) {
     fun openLocalGame() {
         val tabs = CustomTabsIntent.Builder().build()
         tabs.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        tabs.launchUrl(getApplication(), "http://127.0.0.1:3000".toUri())
+        val port = _ui.value.port.takeIf { it > 0 } ?: 80
+        tabs.launchUrl(getApplication(), "http://127.0.0.1:$port".toUri())
     }
 
     fun clearMessage() {
@@ -249,14 +263,17 @@ class HostViewModel(app: Application) : AndroidViewModel(app) {
         gameSocket.updateSettings(current.copy(soplica = value.coerceIn(0, 100)))
     }
 
-    private fun ensureSocket() {
-        if (socketConnectedForSession) return
+    private fun ensureSocket(port: Int) {
+        if (port <= 0) return
+        val url = "http://127.0.0.1:$port"
+        if (socketConnectedForSession && socketUrl == url) return
+        val first = socketUrl == null
+        socketUrl = url
         socketConnectedForSession = true
         viewModelScope.launch(Dispatchers.IO) {
-            // Small delay so Express is fully ready after SHOKER_READY
-            delay(300)
+            if (first) delay(300)
             withContext(Dispatchers.Main) {
-                gameSocket.connect("http://127.0.0.1:3000")
+                if (socketUrl == url) gameSocket.connect(url)
             }
         }
     }
@@ -289,11 +306,13 @@ class HostViewModel(app: Application) : AndroidViewModel(app) {
             else -> polled
         }
 
-        if (HostRuntime.state == HostRuntime.State.Running) {
-            ensureSocket()
-        }
+        val best = NetworkAddressFinder.findBestIpv4()
+        val port = status.port.takeIf { it > 0 } ?: _ui.value.port
+        val portNote = if (polled != null && polled.reachable) polled.portWarning else _ui.value.portNote
 
-        refreshNetworkIfNeeded()
+        if (HostRuntime.state == HostRuntime.State.Running) {
+            ensureSocket(port)
+        }
 
         val state = HostRuntime.state
         val now = System.currentTimeMillis()
@@ -342,17 +361,51 @@ class HostViewModel(app: Application) : AndroidViewModel(app) {
                 playerCount = if (it.socketReady) it.playerCount else status.playerCount,
                 connectedCount = if (it.socketReady) it.connectedCount else status.connectedCount,
                 phase = if (it.socketReady) it.phase else status.phase,
-                port = status.port.takeIf { p -> p > 0 } ?: 3000,
+                hostIp = best?.ip,
+                hotspotHintVisible = !HotspotHelper.looksLikeHotspotActive(),
+                port = port,
+                portNote = portNote,
                 error = bootError,
                 bootElapsedMs = bootElapsed,
                 screen = nextScreen,
             )
         }
+        rebuildLinks()
     }
 
-    private fun refreshNetworkIfNeeded() {
-        if (_ui.value.hostIp == null || _ui.value.hotspotHintVisible) {
-            refreshNetwork()
+    private fun rebuildLinks() {
+        val current = _ui.value
+        val ipUrl = current.hostIp?.let { NetworkAddressFinder.httpUrl(it, current.port) }
+        val mdns = HostRuntime.mdns
+        val domain = when (mdns.phase) {
+            MdnsPhase.Ready, MdnsPhase.Conflict ->
+                mdns.hostname?.let { NetworkAddressFinder.httpUrl(it, current.port) }
+            else -> null
+        }
+        val preferred = domain ?: ipUrl
+        val fallback = if (domain != null && ipUrl != null && domain != ipUrl) ipUrl else null
+        val useFallback = fallback != null && qrPreferFallback
+        val active = if (useFallback) fallback else preferred
+        val qr = when {
+            active == null -> {
+                lastQrUrl = null
+                null
+            }
+            active == lastQrUrl -> current.qr
+            else -> {
+                lastQrUrl = active
+                runCatching { QrBitmap.fromUrl(active) }.getOrNull()
+            }
+        }
+        _ui.update {
+            it.copy(
+                preferredUrl = preferred,
+                fallbackUrl = fallback,
+                joinUrl = active,
+                qr = qr,
+                qrUsesFallback = useFallback,
+                mdnsNote = mdns.message,
+            )
         }
     }
 
