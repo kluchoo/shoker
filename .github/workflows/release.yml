@@ -30,7 +30,9 @@ jobs:
       - name: Bundle Node into the Android app
         run: npm run android:prepare
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
 
       - name: Install Android SDK packages
         run: |
@@ -46,7 +48,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' android/app/build.gradle.kts | head -n 1)
-          name="Shoker_${version}"
+          name="Shoker ${version}"
           apk_src=$(find android/app/build/outputs/apk/release -name '*.apk' -print -quit)
           if [ -z "$apk_src" ]; then
             echo "Release APK was not produced"
